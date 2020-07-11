@@ -7,6 +7,7 @@ Created on Thu Jul  9 13:49:27 2020
 
 import numpy as np
 import scipy as sp
+from scipy import interpolate
 import matplotlib.pyplot as plt
 import pandas
 import csv
@@ -14,7 +15,8 @@ import os
 #from matplotlib.widgets import LassoSelector
 
 #%%
-
+plt.close()
+plt.close()
 folder_path = r'C:\Users\iveli\OneDrive\Documents\Ron\031919'
 file_paths = []
 
@@ -24,33 +26,53 @@ for file in os.listdir(folder_path):
         
 temps = [1.52, 0.62, 5.71, 3.96, 8, 10, 12, 14, 18, 3.27, 2.24, 0.96];
 
-[val,phase] = FFTcalc(fn = file_paths[0])
+[val,phase,ffinvspl,chispl,ff,chi] = FFTcalc(fn = file_paths[0])
 plt.plot(val)
+plt.figure()
+plt.plot(1/np.array(ff),chi)
+plt.plot(ffinvspl,chispl)
+
+
 #%%
-def FFTcalc(FFup = [], chiup = [], fn = '', FFmin = 1.5):
+def FFTcalc(FFrange = [10, 50],FFupi = [], chiupi = [], fn = '', FFmin = 1.5):
     if fn != '':
         try:
-            [FFup, chiup] = dHvALoad(fn,FFmin)
+            [FFupi, chiupi] = dHvALoad(fn,FFmin)
             
         except:
             print("Failed at reading filename step")
+    FFupi = np.array(FFupi)
+    FFupi[FFupi < FFrange[0]] = 0
+    FFupi[FFupi > FFrange[1]] = 0
+    FFup = []
+    chiup = []
+    for ii in range(len(FFupi)):
+        if FFupi[ii] != 0:
+            FFup.append(FFupi[ii])
+            chiup.append(chiupi[ii])
+            
+            
     
     n = int(2**11);
     N = int(2**20)
     FFinv = 1/np.array(FFup)
     FFinvspl = np.linspace(min(FFinv),max(FFinv),n) #spline for fitting
     delta_spl = FFinvspl[1] - FFinvspl[0] #int in Ron's code
+    
+    #For removing curvature in data:
     degree = 3
     chifit = np.polyfit(FFup,chiup,degree) #yfit in ron's code
     chifit_v = np.polyval(chifit,FFup)
     chi = chiup - chifit_v
     
+    #Reindexing stuff:
     [toss, unique_ind] = np.unique(FFinv, return_index = True)
     unique_ind = np.sort(unique_ind).astype(int)
     FF = (np.array(FFup))[unique_ind]
     chi = (np.array(chiup))[unique_ind]
     
-    chispl = np.interp(FFinvspl,1/FF,chi)
+    chispl_fn = interpolate.interp1d(1/FF, chi)  #np.interp(FFinvspl,1/FF,chi)
+    chispl = chispl_fn(FFinvspl);
     n_datapoints = len(chispl) #Datapoints in ron's code
     hwind = np.hanning(n_datapoints)
     chisplW = chispl*hwind; #ysplW in ron's code
@@ -74,8 +96,8 @@ def FFTcalc(FFup = [], chiup = [], fn = '', FFmin = 1.5):
     fs = n_datapoints/length #sampling frequency
     f = fs/2 * np.linspace(0,1,n_datapoints/2 + 1); #frequency
     
-    return FFTval,FFTphase;
-    #try doing the chifit etc with FFinv instead of FF
+    return FFTval,FFTphase, FFinvspl,chispl,FFup,chiup ;
+   
     
     
 #%%
@@ -99,4 +121,4 @@ def dHvALoad(fn = '', FFmin = 1.5):
     return [FFup_return,chiup]
 
 #%%
-def MassCalc
+def MassCalc():
