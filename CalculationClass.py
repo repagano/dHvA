@@ -1,12 +1,11 @@
-
 import numpy as np
-import scipy as sp
+#import scipy as sp
 from scipy import interpolate,signal, optimize
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pandas
-import csv
-import os
-from enum import Enum
+#import csv
+#import os
+
 #%%
 class ClassdHvALoad():
     FFmin = 1.5
@@ -32,13 +31,13 @@ class ClassMassCalc():
     maxFrequency = []
     
 
-class dataInterp(): 
+class dataProcess(): 
     inputFrequencyRange = []
     fn = ''
     inputTemperature = []
     dHvALoadObj = ClassdHvALoad()
     FFTCalcObj = ClassFFTCalc()
-    MassCalcObj = ClassMassCalc()
+    #MassCalcObj = ClassMassCalc()
     
     def func_dHvALoad(self):
         FFmin = self.dHvALoadObj.FFmin
@@ -58,11 +57,11 @@ class dataInterp():
                 chiup.append(chi[ii])
                 FFup_return.append(FFup[ii])
         self.dHvALoadObj.chiup = np.array(chiup)
-        self.dHvALoadObj.FFup = np.array(FFup)
+        self.dHvALoadObj.FFup = np.array(FFup_return)
         #print('Finished loading dHvA data\n')
         
     def func_FFTCalc(self):
-        if self.dHvALoadObj.FFup != [] & self.dHvALoadObj.chiup != []:
+        if self.dHvALoadObj.FFup != [] and self.dHvALoadObj.chiup != []:
             FFupi = self.dHvALoadObj.FFup
             chiupi = self.dHvALoadObj.chiup
         else:
@@ -73,7 +72,7 @@ class dataInterp():
             print('Done loading dHvA data')
         FFupi[FFupi < self.FFTCalcObj.FFrange[0]] = 0
         FFupi[FFupi > self.FFTCalcObj.FFrange[1]] = 0
-        nonzeroIndices = np.where(FFupi != 0)[1]
+        nonzeroIndices = np.where(FFupi != 0)[0]
         FFup = FFupi[nonzeroIndices]
         chiup = chiupi[nonzeroIndices]
         
@@ -116,7 +115,7 @@ class dataInterp():
         length = abs(ffinv_fft[-1] - ffinv_fft[1])
         fs = n_datapoints/length #sampling frequency
         f = fs/2 * np.linspace(0,1,n_datapoints/2 + 1); #frequency
-        fI = np.where(f> self.inputFrequencyRange[0] & f < self.inputFrequencyRange[1])
+        fI = np.where((f> self.inputFrequencyRange[0]) & (f < self.inputFrequencyRange[1]))
         f = f[fI]
         
         self.FFTCalcObj.ffInv = 1/FF
@@ -153,40 +152,104 @@ class dataInterp():
                     peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
                     
         return [peakFreq,peakVal]
+       
+#    def func_MassCalc(self):
+#        
+#        if self.FFTCalcObj.frequencies == []:
+#            print('Calculating FFT first\n')
+#            self.FFTCalcObj(self)
+#        [peakFreqs,peakAmps] = self.func_FindPeaks()
+#        f = self.FFTCalcObj.frequencies
+#        FFTvs = self.FFTCalcObj.FFT
+#        tempVec = []
+#        if len(self.MassCalcObj.tempVec) == 0:
+#            print("A vector of temperatures is neeeded for fitting.\n")
+#            print("Assign a vector of temperatures to MassCalcObject.tempVec.")
+#            exit()
+#        elif len(self.MassCalcObj.tempVec) != 0:
+#            tempVec = np.array(self.MassCalcObj.tempVec)
+#            
+#        
+#        A = max(FFTvs)
+#        maxI = FFTvs.argmax()
+#        temp = self.inputTemperature
+#        Brange = self.FFTCalcObj.FFrange
+#        MF = f[maxI]
+#        maxFreq = np.mean(MF)
+#        phaseV = self.FFTCalcObj.phase
+#        phase = phaseV[maxI]
+#        AoT = A/temp
+#        
+#        Bm= 1/(0.5*(1/Brange[0]) + 1/Brange[-1])
+#        fitresult = optimize.least_squares(lambda coeffs:coeffs[0]/np.sinh(coeffs[1]*tempVec) )
+#            
+#        return print('MassCalc')
+        
+class MassCalc():
+    fnVec= []
+    tempVec = []
+    freqRangeVec = []
+    massCalcObj = ClassMassCalc();
+    dataProcObjVec = []
+#    dHvALoadObj = dataProcess.dHvALoadObj();
+#    FFTCalcObj = dataProcess.FFTCalcObj();
+    _dataProcVecNonzero = False
     
+    def _checkProcVec(self):
+        if len(self.dataProcObjVec) == 0:
+            self._dataProcVecNonzero = False;
+        else:
+            self._dataProcVecNonzero = True
+        return self._dataProcVecNonzero 
+        
+    
+    def func_dataPrep(self):
+        dataProcBool = self._checkProcVec();
+        if dataProcBool == False:
+            if len(self.fnVec) != len(self.tempVec) or len(self.fnVec) != len(self.freqRangeVec) :
+                print("fnVec and tempVec must be the same length")
+                exit();
+            for ii in range(len(self.fnVec)):
+                dataProcObj = dataProcess();
+                dataProcObj.fn = self.fnVec[ii]
+                dataProcObj.inputTemperature = self.tempVec[ii]
+                dataProcObj.inputFrequencyRange = self.freqRangeVec[ii]
+                dataProcObj.func_dHvALoad()
+                dataProcObj.func_FFTCalc()
+                self.dataProcObjVec.append(dataProcObj)
+            
     def func_MassCalc(self):
-        
-        if self.FFTCalcObj.frequencies == []:
-            print('Calculating FFT first\n')
-            self.FFTCalcObj(self)
-        [peakFreqs,peakAmps] = self.func_FindPeaks()
-        f = self.FFTCalcObj.frequencies
-        FFTvs = self.FFTCalcObj.FFT
-        tempVec = []
-        if len(self.MassCalcObj.tempVec) == 0:
-            print("A vector of temperatures is neeeded for fitting.\n")
-            print("Assign a vector of temperatures to MassCalcObject.tempVec.")
-            exit()
-        elif len(self.MassCalcObj.tempVec) != 0:
-            tempVec = self.MassCalcObj.tempVec
+        if self._checkProcVec == False:
+            self.func_dataPrep()
+        for dataProcObj in self.dataProcObjVec:
+            FFTObj = dataProcObj.FFTCalcObj;
             
         
-        A = max(FFTvs)
-        maxI = FFTvs.argmax()
-        temp = self.inputTemperature
-        Brange = self.FFTCalcObj.FFrange
-        MF = f[maxI]
-        maxFreq = np.mean(MF)
-        phaseV = self.FFTCalcObj.phase
-        phase = phaseV[maxI]
-        AoT = A/temp
         
-        def fit_func(a,b,x):
-            return  a/np.sinh(b*x)
-        Bm= 1/(0.5*(1/Brange[0]) + 1/Brange[-1])
-        fitresult = optimize.least_squares(fit_func)
-            
-        return print('MassCalc')
-        
-
+                
     
+            
+ 
+folder_path = r'C:\Users\iveli\OneDrive\Documents\Ron\031919'
+file_paths = []
+
+for file in os.listdir(folder_path):
+    if file.endswith('.ASC'):
+        file_paths.append(folder_path+'\\'+str(file))
+        
+temps = [1.52, 0.62, 5.71, 3.96, 8, 10, 12, 14, 18, 3.27, 2.24, 0.96];    
+
+#testObj = dataProcess()
+#testObj.fn = file_paths[0]
+#testObj.inputTemperature = temps[0]
+#testObj.inputFrequencyRange = [10,8000]
+#
+#testObj.func_dHvALoad()
+#testObj.func_FFTCalc()
+
+masstestObj = MassCalc()
+masstestObj.fnVec = file_paths
+masstestObj.tempVec = temps
+frang= [10,8000]
+masstestObj.freqRangeVec = [frang]*len(file_paths)
+masstestObj.func_dataPrep()
