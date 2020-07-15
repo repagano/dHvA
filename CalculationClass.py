@@ -128,30 +128,30 @@ class dataProcess():
         
         print('Finished calculating the FFT\n')
         
-    def func_FindPeaks(self,minFreq = 150): 
-        FFT = self.FFTCalcObj.FFT
-        f = self.FFTCalcObj.frequencies
-        rms = np.std(FFT)
-        peakLoc = signal.find_peaks(FFT,height = rms)[0]
-        peakVal = FFT[peakLoc]
-        peakFreq = f[peakLoc]
-        peakValReduced = []
-        peakFreqReduced = []
-        
-        for ii in range(len(peakVal)):
-            nearbyPeakLocs = np.where(abs(peakFreq[ii] - peakFreq) < 150)
-            nearbyPeakVals = peakVal[nearbyPeakLocs]
-            nearbyPeakFreqs = peakFreq[nearbyPeakLocs]
-            reduced_peak_loc = np.where(peakVal == max(nearbyPeakVals))[0]
-            if len(peakFreqReduced) != 0 and min(nearbyPeakFreqs) > minFreq:
-                if max(nearbyPeakVals) != peakValReduced[-1]:
-                    peakValReduced.append(max(nearbyPeakVals))
-                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
-            elif len(peakFreqReduced) == 0 and min(nearbyPeakFreqs) > minFreq:
-                    peakValReduced.append(max(nearbyPeakVals))
-                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
-                    
-        return [peakFreq,peakVal]
+#    def func_FindPeaks(self,minFreq = 150): 
+#        FFT = self.FFTCalcObj.FFT
+#        f = self.FFTCalcObj.frequencies
+#        rms = np.std(FFT)
+#        peakLoc = signal.find_peaks(FFT,height = rms)[0]
+#        peakVal = FFT[peakLoc]
+#        peakFreq = f[peakLoc]
+#        peakValReduced = []
+#        peakFreqReduced = []
+#        
+#        for ii in range(len(peakVal)):
+#            nearbyPeakLocs = np.where(abs(peakFreq[ii] - peakFreq) < 150)
+#            nearbyPeakVals = peakVal[nearbyPeakLocs]
+#            nearbyPeakFreqs = peakFreq[nearbyPeakLocs]
+#            reduced_peak_loc = np.where(peakVal == max(nearbyPeakVals))[0]
+#            if len(peakFreqReduced) != 0 and min(nearbyPeakFreqs) > minFreq:
+#                if max(nearbyPeakVals) != peakValReduced[-1]:
+#                    peakValReduced.append(max(nearbyPeakVals))
+#                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
+#            elif len(peakFreqReduced) == 0 and min(nearbyPeakFreqs) > minFreq:
+#                    peakValReduced.append(max(nearbyPeakVals))
+#                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
+#                    
+#        return [peakFreq,peakVal]
        
 #    def func_MassCalc(self):
 #        
@@ -217,7 +217,124 @@ class MassCalc():
                 dataProcObj.func_dHvALoad()
                 dataProcObj.func_FFTCalc()
                 self.dataProcObjVec.append(dataProcObj)
+        
+    def _findPeaks(self,index):
+        FFTObj = self.dataProcObjVec[index].FFTCalcObj;
+        FFT = FFTObj.FFT
+        f = FFTObj.frequencies
+        rms = np.std(FFT)
+        peakLoc = signal.find_peaks(FFT,height = rms)[0]
+        peakVal = FFT[peakLoc]
+        peakFreq = f[peakLoc]
+        peakValReduced = []
+        peakFreqReduced = []
+        minFreq = self.dataProcObjVec[index].inputFrequencyRange[0];
+        for ii in range(len(peakVal)):
+            nearbyPeakLocs = np.where(abs(peakFreq[ii] - peakFreq) < 50)
+            nearbyPeakVals = peakVal[nearbyPeakLocs]
+            nearbyPeakFreqs = peakFreq[nearbyPeakLocs]
+            reduced_peak_loc = np.where(peakVal == max(nearbyPeakVals))[0]
+            if len(peakFreqReduced) != 0 and min(nearbyPeakFreqs) > minFreq:
+                if max(nearbyPeakVals) != peakValReduced[-1]:
+                    peakValReduced.append(max(nearbyPeakVals))
+                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
+            elif len(peakFreqReduced) == 0 and min(nearbyPeakFreqs) > minFreq:
+                    peakValReduced.append(max(nearbyPeakVals))
+                    peakFreqReduced.append(peakFreq[reduced_peak_loc][0])
+                    
+        return [peakFreq,peakVal]
+    
+    def _ComparePeaks(self):
+        peakFreqs = []
+        peakAmps = []
+        significantPeaks = np.empty((0,0))
+        for ii in range(len(self.dataProcObjVec)):
+            [freqs,amps] = self._findPeaks(self,ii)
+            peakFreqs.append(freqs)
+            peakAmps.append(amps)
+        
+        for ii in range(len(self.dataProcObjVec)):
+            currentFreqs = np.array(peakFreqs[ii])
+            for jj in range(len(self.dataProcObjVec)):
+                testFreq = np.array(peakFreqs[ii])
+                if ii != jj:
+                    for kk in range(len(currentFreqs)):
+                        simFreqLoc = np.where(abs(currentFreqs[kk]-testFreq) <= 10)
+                        if simFreqLoc.size != 0:
+                            significantPeaks = np.append(significantPeaks, testFreq[simFreqLoc])
+        significantPeaks = np.unique(significantPeaks)
+        
+        refinedFrequencies = np.empty((0,0))
+        for ii in range(len(significantPeaks)):
+            currentFreq = significantPeaks[ii]
+            simFreqLocs = np.where(abs(currentFreq - significantPeaks)<9)[0]
+            if simFreqLocs.size > 5:
+                refinedFrequencies = np.append(refinedFrequencies,significantPeaks[simFreqLocs])
+        
+        refinedFrequencies = np.unique(refinedFrequencies)
+        refinedFrequencies = list(refinedFrequencies)
+        
+        ind = 0
+        currentFreq = refinedFrequencies[0]
+        while currentFreq < refinedFrequencies[-1]:
+            currentFreq = refinedFrequencies[ind]
+            oom = np.floor(np.log10(currentFreq))
+            ind+=1
+            if oom <= 2.:
+                fact = 0.1
+            else:
+                fact = 0.02
+            diff = abs(np.array(refinedFrequencies)-currentFreq)
+            badLocs = np.where((diff < fact*currentFreq) & (refinedFrequencies != currentFreq))
+            badFreqs = np.array(refinedFrequencies)[badLocs]
+            if len(badFreqs) != 0:
+                for badFreq in badFreqs:
+                    refinedFrequencies.remove(badFreq)
+                ind = 0
+        return np.unique(refinedFrequencies)
+#        finalFrequencies = []
+#        for ii in range(len(refinedFrequencies)):
+#            currentFreq = refinedFrequencies[ii]
+#            if ii != 0:
+#                if currentFreq - refinedFrequencies[ii-1] < 20:
+#                    finalFrequencies.append((currentFreq + refinedFrequencies[ii-1])/2)
+#                else:
+#                    finalFrequencies.append(currentFreq)
+#            if ii == 0:
+#                finalFrequencies.append(currentFreq)
+#        return np.unique(np.array(finalFrequencies));
+        
+    def _findCorresponingAmp(self,ind):
+        commonPeakFreqs = self._ComparePeaks()
+        FFTObj = self.dataProcObjVec[ind].FFTCalcObj
+        FFT = np.array(FFTObj.FFT)
+        f = np.array(FFTObj.frequencies)
+        peakAmp = []
+        rmsAmp = []
+        peakFreq = []
+        #want to find where the max value occurs and then do a window around IT
+        for freqPeak in commonPeakFreqs:
+            #oom = np.floor(np.log10(freqPeak))
+            freqWindow = 0.02*freqPeak
+            fWindowMin = freqPeak - freqWindow
+            fWindowMax = freqPeak + freqWindow
+            searchLoc = np.where((f > fWindowMin) & (f < fWindowMax))[0]
+            ampVec = FFT[searchLoc]
+            maxAmp = ampVec.max()
+            maxInd = np.where(FFT = maxAmp)
+            maxFreq = f[maxInd]
+            rms = np.std(ampVec)
+            peakAmp.append(maxAmp)
+            peakFreq.append(maxFreq)
+            rmsAmp.append(rms)
+        return peakFreq, peakAmp, rmsAmp
+                
             
+        
+            
+    
+
+        
     def func_MassCalc(self):
         if self._checkProcVec == False:
             self.func_dataPrep()
@@ -250,6 +367,6 @@ temps = [1.52, 0.62, 5.71, 3.96, 8, 10, 12, 14, 18, 3.27, 2.24, 0.96];
 masstestObj = MassCalc()
 masstestObj.fnVec = file_paths
 masstestObj.tempVec = temps
-frang= [10,8000]
+frang= [400,4000]
 masstestObj.freqRangeVec = [frang]*len(file_paths)
 masstestObj.func_dataPrep()
