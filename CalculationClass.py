@@ -5,25 +5,14 @@ from scipy import interpolate,signal, optimize
 import pandas
 #import csv
 import os
+import matplotlib.pyplot as plt
 
 #%%
     
 class ClassMassCalc():
     m = []
-    A = []
     AoT = []
-    AoTfitV = []
-    tempVec = []
-    maxFrequency = []
-    
-#class dataProcess(): 
-#    inputFrequencyRange = []
-#    fn = ''
-#    inputTemperature = []
-#    dHvALoadObj = ClassdHvALoad()
-#    FFTCalcObj = ClassFFTCalc()
-#    MassCalcObj = ClassMassCalc()
-    
+    AoTFitParams = []    
 
 class ClassdHvALoad():
     fn = ''
@@ -165,8 +154,7 @@ class MassCalc():
     massCalcObj = ClassMassCalc();
     dataProcObjVec = []
     FFTObj = ClassFFTCalc();
-#    dHvALoadObj = dataProcess.dHvALoadObj();
-#    FFTCalcObj = dataProcess.FFTCalcObj();
+    averagePeakFreqs = []
     _dataProcVecNonzero = False
     
     def _checkProcVec(self):
@@ -183,6 +171,9 @@ class MassCalc():
             if len(self.fnVec) != len(self.tempVec) or len(self.fnVec) != len(self.freqRangeVec) :
                 print("fnVec and tempVec must be the same length")
                 exit();
+            [newTempVec,newTempVecLocs] = np.unique(self.tempVec,return_index = True)
+            self.tempVec = newTempVec
+            self.fnVec = np.array(self.fnVec)[newTempVecLocs]
             for ii in range(len(self.fnVec)):
                 dataProcObj = ClassFFTCalc();
                 dataProcObj.fn = self.fnVec[ii];#print(dataProcObj.fn)
@@ -192,10 +183,6 @@ class MassCalc():
                 dataProcObj.func_FFTCalc()
                 dataProcObj.func_findPeaks()
                 self.dataProcObjVec.append(dataProcObj)
-#            for ii in self.dataProcObjVec:
-#                print(len(ii.peakFreqs))
-            #print('\n\n')
-            #print(self.dataProcObjVec[0].FFTCalcObj.peakFreqs,',',self.dataProcObjVec[3].FFTCalcObj.peakFreqs)
        
     def _ComparePeaks(self):
         peakFreqs = []
@@ -225,7 +212,6 @@ class MassCalc():
             simFreqLocs = np.where(abs(currentFreq - significantPeaks)<9)[0]
             if simFreqLocs.size > 5:
                 refinedFrequencies = np.append(refinedFrequencies,significantPeaks[simFreqLocs])
-                #print(significantPeaks[simFreqLocs],'\n')
         
         refinedFrequencies = np.unique(refinedFrequencies)
         refinedFrequencies = list(refinedFrequencies)
@@ -250,8 +236,9 @@ class MassCalc():
         return np.unique(refinedFrequencies)
 
         
-    def _findCorresponingAmp(self,ind,commonPeakFreqs):
-        commonPeakFreqs = self._ComparePeaks()
+    def _findCorresponingAmp(self,ind,commonPeakFreqs = []):
+        if commonPeakFreqs == []:
+            commonPeakFreqs = self._ComparePeaks()
         FFTObj = self.dataProcObjVec[ind]
         FFT = np.array(FFTObj.FFT)
         f = np.array(FFTObj.frequencies)
@@ -285,22 +272,55 @@ class MassCalc():
         if self._checkProcVec() == False:
             self.func_dataPrep()
         commonPeakFreqs = self._ComparePeaks()
-        tempVec = self.tempVec
+        tempVec = np.array(self.tempVec)
         tempLength = len(tempVec)
         freqLength = len(commonPeakFreqs)
         amplitudeMat = np.empty((tempLength,freqLength)) #horizontal axis: frequency, vertical axis: temperature
         frequencyMat = np.empty((tempLength,freqLength))
         rmsMat = np.empty((tempLength,freqLength))
+        AoTMat = np.empty((tempLength,freqLength))
+#        print(np.shape(AoTMat))
+        #BrangeMat = []
+        BmVec = []
         
         for ii in range(len(tempVec)):
             [peakFreq,peakAmp,rmsAmp] = self._findCorresponingAmp(ii,commonPeakFreqs)
-            amplitudeMat[ii][:] = peakAmp
-            frequencyMat[ii][:] = peakFreq
-            rmsMat[ii][:] = rmsAmp
-            
+            amplitudeMat[ii] = peakAmp
+            frequencyMat[ii] = peakFreq
+            rmsMat[ii] = rmsAmp
+            AoTMat[ii] = peakAmp/tempVec[ii]
+            FFrange = self.dataProcObjVec[ii].FFrange
+            BmVec.append(1/(0.5*(1/FFrange[0] + 1/FFrange[-1])))
+        self.massCalcObj.AoT = AoTMat
+        Bm = np.unique(BmVec)[0]
+        bUpper = 3*14.69/Bm
+        p0 = [0,0.1]
+        def AoTFitType(x,a,b):
+            return a/np.sinh(b*x)
+#        print(len(AoTMat),'\n')
+#        print(len(AoTMat.transpose()),'\n')
+        for ii in range(len(AoTMat.transpose())):
+            dataToFit = AoTMat[:,ii] #y values
+#            print(np.shape(np.matrix(AoTMat)[:,ii]),'\n')
+#            print(np.shape(np.matrix(AoTMat)[ii,:]),'\n')
+#            break;
+#            rmsValues = rmsMat[:,ii]
+            AoTfit_params, params_covar = optimize.curve_fit(AoTFitType,tempVec,dataToFit,p0 = p0)
+            self.averagePeakFreqs.append(np.average(frequencyMat[:,ii]))
+#            dummyTempVec = np.linspace(min(tempVec),max(tempVec),100)
+            self.massCalcObj.AoTFitParams.append(AoTfit_params)
+            self.massCalcObj.m.append(AoTfit_params[1]*Bm/14.69)
+#            print(AoTfit_params)
+#            break;
+#            AoTFitted = AoTFitType(dummyTempVec,AoTfit_params[0],AoTfit_params[1])
+#            plt.figure()
+#            plt.errorbar(tempVec,dataToFit,rmsValues, fmt = 'ko')
+#            plt.plot(dummyTempVec,AoTFitted)
+#            titeStr = 'Frequency: '+str(np.average(frequencyMat[:,ii]))
+#            
+#            plt.title(titeStr)
+        return frequencyMat
         
-            
-            
         
             
         
@@ -316,14 +336,14 @@ for file in os.listdir(folder_path):
         
 temps = [1.52, 0.62, 5.71, 3.96, 8, 10, 12, 14, 18, 3.27, 2.24, 0.96];    
 
-testObj = dataProcess()
-testObj.fn = file_paths[0]
-testObj.inputTemperature = temps[0]
-testObj.inputFrequencyRange = [10,8000]
-
-testObj.func_dHvALoad()
-testObj.func_FFTCalc()
-testObj.func_findPeaks()
+#testObj = dataProcess()
+#testObj.fn = file_paths[0]
+#testObj.inputTemperature = temps[0]
+#testObj.inputFrequencyRange = [10,8000]
+#
+#testObj.func_dHvALoad()
+#testObj.func_FFTCalc()
+#testObj.func_findPeaks()
 
 #for ii in range(len(temps)):
 #    testObj = dataProcess()
@@ -344,4 +364,4 @@ masstestObj.tempVec = temps
 frang= [450,4000]
 masstestObj.freqRangeVec = [frang]*len(file_paths)
 masstestObj.func_dataPrep()
-masstestObj.func_MassCalc()
+plz = masstestObj.func_MassCalc()
