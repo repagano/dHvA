@@ -1,10 +1,21 @@
 import numpy as np
 from scipy import interpolate,signal, optimize
 import pandas as pd
-import os
 
 #%%
 def dHvALoad(fn,FFmin = 1.5):
+    """
+    Loads dHvA data
+    Arguments:
+        fn: filename of the dHvA data
+        FFmin (opt): The minimum value of the fixed field (FF) you want to include.
+                    Default is 1.5.
+        
+    Returns:
+        chiup: The chi values associated with rising FF data
+        FFup_return: The rising FF data
+    """
+    
     data = pd.read_csv(fn, delimiter = '\t')
     Bdot = np.array(data.Bdot) #dH/dt
     Mdot = np.array(data.Mag1) #dM/dt (Mag1 in ron's code)
@@ -23,6 +34,23 @@ def dHvALoad(fn,FFmin = 1.5):
     
 
 def FFTCalc(fn,FFmin = 1.5, FFrange = [10,50], freqRange = [400,4000]):
+    """
+    Performs an FFT on fixed field data
+    Arguments:
+        fn: Filename with the dHvA data
+        FFmin (opt): The minimum value of the fixed field (FF) you want to include.
+                    Default is 1.5.
+        FFrange (opt): Length 2 array that defines the FF range to be considered 
+                        for the FFT. Default is [10,50]
+        freqRange (opt): Length 2 array that defines The frequency range over 
+                        which the FFT is considered. Default is [400,4000]
+    
+    Returns:
+        frequencies: An array of frequencies dependent on freqRange
+        FFTAmplitudes: Amplitudes associated with frequencies following the FFT
+        FFTPhases: Phases associated with frequencies following the FFT
+    """
+    
     [chi,FF] = dHvALoad(fn = fn, FFmin = FFmin)
     FFupi = np.array(FF)
     chiupi = np.array(chi)
@@ -78,6 +106,25 @@ def FFTCalc(fn,FFmin = 1.5, FFrange = [10,50], freqRange = [400,4000]):
 
         
 def findPeaks(fn = '',FFT = [],f = [],freqRange = [400,4000], FFrange = [10,50],FFmin = 1.5):
+    """
+    Finds peaks in the fourier transformed fixed field (FF) data
+    Arguments:
+        fn: Filename that holds the dHvA data. Not necessary if FFT and f are given.
+        FFT: Array of Fourier transform amplitude data. Not necessary if fn is given.
+        f: Array of frequencies associated with FFT data. Not necessary if fn is given
+        freqRange (opt): Length 2 array that defines the range of frequencies to  
+                         be considered for searching for peaks. Default is [400,4000]
+        FFrange (opt): Length 2 array defining range of FF data. Default is [10,50].
+                        Not necessary if FFT and f are given.
+        FFmin (opt): The minimum value of the fixed field (FF) you want to include.
+                    Default is 1.5. Not necessary if FFT and f are given.
+                    
+    Returns:
+        peakFreqReduced: An array of frequencies where peaks occur
+        peakValReduced: The amplitudes of the peaks at frequencies given in 
+                        peakFreqReduced.
+    """
+    
     if fn != '':
         if FFT != []:
             print('Please only provide a filename OR FFT and frequency data, not both.\n')
@@ -114,6 +161,54 @@ def findPeaks(fn = '',FFT = [],f = [],freqRange = [400,4000], FFrange = [10,50],
 
 
 class MassCalc():
+    """
+    Takes information from fixed field (FF) data files of various temperatures 
+    in order to calculate the mass from the mass spectroscopy experiment.
+    
+    Input Properties:
+        fnVec: Vector of filenames that hold the dHvA data
+        tempVec: Vector of temperatures associated with the filenames provided in
+                fnVec. For accurate results, the values of tempVec and fnVec
+                MUST be in the same order.
+        FFRangeVec: A vector of ranges for FF for each associated file, i.e. like: 
+                    [[10,50],[10,50],[10,50]] That must be the same length as 
+                    fnVec and tempVec. If the length of FFrangeVec is 2, then 
+                    the same FF range is assumed for all data sets (recommended).
+        freqRangeVec: A vector of frequency ranges for each associated file, i.e.
+                    like [[400,4000],[400,4000],[400,4000]] that must be the 
+                    same length as fnVec and tempVec.  If the length of 
+                    freqRangeVec is 2, then the same frequency range is assumed
+                    for all data sets (recommended)
+        
+    Returned Properties:
+        dataFrameTemp: A table of relevant data associated with the appropriate
+                        dataset for each temperature. Size: len(tempVec) x 9.
+                        Data included:
+                            Temperature: Temperature of the dataset
+                            Filepath: Filepath of the dataset
+                            Frequencies: Array of frequencies following FFT of FF data
+                            FFT_Amplitudes: Array of amplitudes associated with Frequencies
+                            FFT_Phases: Array of phases associated with Frequencies
+                            Peak_Locations: Frequency locations of peaks shared by all* temperatures
+                            Peak_Amplitudes: Amplitudes at the peak locations
+                            Peak_Phases: Phases at the peak locations
+                            Amplitude_rms: rms of the amplitudes around locations of peaks.
+        dataFramePeak: A table of relevant data associated with the peaks that are 
+                        shared by all* temperatures. Data included:
+                            Average_Peak_Frequency: The average frequency where peaks occur
+                                for each temperature
+                            AoT: For a given shared peak, this is the Amplitude of the peak
+                                at a temperature divided by that temperature.
+                                An array the length of tempVec.
+                            AOT_Parameters: The parameters that fit the AoT values of a 
+                                particular frequency to the mass calculation model
+                            Mass: The experimentally calculated mass found from
+                                AOT_Parameters[1].
+                            Mass_Error: The error in the mass calculation.
+                            
+                            
+    """
+    
     fnVec= []
     tempVec = []
     freqRangeVec = []
@@ -155,6 +250,10 @@ class MassCalc():
         [newTempVec,newTempVecLocs] = np.unique(self.tempVec,return_index = True)
         self.tempVec = newTempVec
         self.fnVec = np.array(self.fnVec)[newTempVecLocs]
+        if len(self.FFRangeVec) == 2:
+            self.FFRangeVec = [self.FFRangeVec]*len(self.tempVec)
+        if len(self.freqRangeVec) == 2:
+            self.freqRangeVec = [self.freqRangeVec]*len(self.tempVec)
         
         #Updating table of info for each temperature:
         for ii in range(len(self.fnVec)):
@@ -260,6 +359,24 @@ class MassCalc():
 
         
     def func_MassCalc(self):
+        """
+        Running this runs a series of private functions to avoid confusing people lol.
+        The first function that gets run (_checkProc()) checks to see if dHvALoad(),
+        FFTCalc(), and findPeaks() need to be run for the given data sets in order 
+        to have the necessary frequency, amplitude, and phase data. If these 
+        functions do need to be run, then a second private function (_dataPrep()) 
+        does so.
+        Once the frequencies, amplitudes, phases, and peaks are known for each
+        temperature, then the 3rd private function (_ComparePeaks()) goes through
+        all of the peak locations for each temperature and finds the frequencies
+        where all* temperatures share a peak and returns a list of these peaks.
+        The final private function (_findCorrespondingAmp()) finds the amplitude,
+        phase, and rms values associated with each peak.
+        With all of this information, this function calculates the AoT data, finds
+        the parameters that fit the AoT data to the mass model, the mass, and the
+        mass error, provided in dataFramePeak.
+        """
+        
         self._checkProc()
         if self._Processed == False:
             self._dataPrep()
